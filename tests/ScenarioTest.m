@@ -66,5 +66,30 @@ classdef ScenarioTest < matlab.unittest.TestCase
             testCase.verifyEqual(X(4:6, :) - X(4:6, 1), zeros(3, 40), "AbsTol", 1e-9);
             testCase.verifyEqual(X(1:3, :), X(1:3, 1) + X(4:6, 1)*t, "AbsTol", 1e-6);
         end
+
+        function turnWindowSetsWhenTheTurnHappens(testCase)
+            [X, t, omega] = simulateScenario(1, 100, 1, TurnWindow=[40 50]);
+            testCase.verifyEqual(find(omega ~= 0), find(t >= 40 & t < 50));
+            headingChange = wrapAngle(atan2(X(5, end), X(4, end)) - atan2(X(5, 1), X(4, 1)));
+            testCase.verifyEqual(headingChange, pi/2, "AbsTol", 1e-9);
+        end
+
+        function accelNoisePerturbsTheSameScenario(testCase)
+            % Random accelerations change the path but not its start, and the
+            % noise seed alone picks the realization.
+            T = 1;
+            Xa = simulateScenario(T, 100, 1, AccelNoise=2, NoiseSeed=5);
+            testCase.verifyEqual(Xa(:, 1), simulateScenario(T, 1, 1));
+            testCase.verifyEqual(Xa, simulateScenario(T, 100, 1, AccelNoise=2, NoiseSeed=5));
+            testCase.verifyNotEqual(Xa, simulateScenario(T, 100, 1, AccelNoise=2, NoiseSeed=6));
+
+            % On the straight legs each velocity change is T times one
+            % acceleration draw, so its spread is sigma*T per axis (~200
+            % samples: 15% is about three standard errors).
+            [~, ~, omega] = simulateScenario(T, 100, 1);
+            k = find(omega(1:end-1) == 0);
+            dv = Xa(4:6, k+1) - Xa(4:6, k);
+            testCase.verifyEqual(std(dv(:)), 2*T, "RelTol", 0.15);
+        end
     end
 end
