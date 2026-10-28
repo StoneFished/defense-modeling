@@ -29,19 +29,28 @@ xEst = zeros(6, N);
 PEst = zeros(6, 6, N);
 x = x0;
 P = P0;
+I = eye(6);
 
 for k = 1:N
     if k > 1
-        % TODO: predict x and P forward one step.
+        x = F*x;
+        P = F*P*F' + Q;
     end
 
-    % TODO: update x and P with the measurement z(:, k).
-    %   - Linearize the measurement model at the predicted state.
-    %   - Wrap the azimuth innovation with wrapAngle: a target near azimuth
-    %     +/-pi otherwise produces a 2*pi "innovation".
-    %   - The textbook covariance update can lose symmetry and positive
-    %     definiteness numerically; consider the Joseph form.
-    error("ekf:notImplemented", "Implement the predict/update steps in ekf.m.")
+    % Update, linearized at the predicted state. Near azimuth +/-pi the raw
+    % azimuth difference can be off by 2*pi, so wrap it.
+    H = measJacobian(x, radarPos);
+    nu = z(:, k) - measModel(x, radarPos);
+    nu(2) = wrapAngle(nu(2));
+    S = H*P*H' + R;
+    K = P*H'/S;
+    x = x + K*nu;
+
+    % Joseph form keeps P positive definite under rounding; averaging with
+    % its transpose removes round-off asymmetry.
+    A = I - K*H;
+    P = A*P*A' + K*R*K';
+    P = (P + P')/2;
 
     xEst(:, k) = x;
     PEst(:, :, k) = P;

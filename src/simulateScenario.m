@@ -55,13 +55,22 @@ function x = propagate(x, omega, T)
 %   omega == 0: straight flight at constant velocity.
 %   omega ~= 0: coordinated turn in the horizontal plane. The speed stays
 %   constant, (vx, vy) rotates by omega*T (counter-clockwise for omega > 0)
-%   and vz is unchanged. Use the exact closed form (integrate the rotating
-%   velocity over the step), not an Euler step; tests/ScenarioTest.m checks
-%   that the turn is a true circular arc.
+%   and vz is unchanged. The update is exact (the rotating velocity is
+%   integrated over the step), not an Euler step; tests/ScenarioTest.m
+%   checks that the turn is a true circular arc.
 
-% TODO: implement the constant-velocity and coordinated-turn kinematics.
-
-% The closed-form turn update divides by omega, so keep the two cases apart.
-error("simulateScenario:notImplemented", ...
-    "Implement propagate() at the bottom of simulateScenario.m.")
+p = x(1:3);
+v = x(4:6);
+if omega == 0
+    p = p + v*T;
+else
+    % (vx, vy) rotates at rate omega. Integrating the rotating velocity over
+    % [0, T] gives the horizontal displacement; the result divides by omega,
+    % hence the separate straight-flight branch.
+    s = sin(omega*T);
+    c = cos(omega*T);
+    p = p + [[s, c - 1; 1 - c, s]*v(1:2)/omega; v(3)*T];
+    v(1:2) = [c, -s; s, c]*v(1:2);
+end
+x = [p; v];
 end

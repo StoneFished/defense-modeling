@@ -17,7 +17,6 @@ arguments
     radarPos (3,1) double
 end
 
-% TODO: compute the target's range, azimuth and elevation relative to
-% radarPos. Use atan2 so the angles land in the correct quadrant.
-error("measModel:notImplemented", "Implement measModel.m.")
+d = x(1:3) - radarPos;              % radar-to-target vector
+z = [norm(d); atan2(d(2), d(1)); atan2(d(3), hypot(d(1), d(2)))];
 end

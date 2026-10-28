@@ -17,6 +17,11 @@ arguments
     sigmaA (1,1) double {mustBeNonnegative}
 end
 
-% TODO: build F and Q (pick a standard white-noise-acceleration model).
-error("cvModel:notImplemented", "Implement cvModel.m.")
+% Discrete white-noise acceleration: the acceleration a is constant over
+% each sample period and independent between periods and axes,
+% a ~ N(0, sigmaA^2*I). Over one period it moves the state by G*a.
+I = eye(3);
+F = [I, T*I; zeros(3), I];
+G = [T^2/2*I; T*I];
+Q = sigmaA^2 * (G*G');
 end
