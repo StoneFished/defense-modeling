@@ -27,14 +27,43 @@ arguments
     sigmaOmegaDot (1,1) double {mustBeNonnegative}
 end
 
-% TODO: propagate x with the exact coordinated-turn closed form: the same
-% kinematics as propagate() in simulateScenario.m, with omega taken from
-% x(7) and carried over unchanged.
-%   - Near omega = 0 the closed form divides 0 by 0. Use Taylor series
-%     there; tests/CtModelTest.m checks omega = 0 and tiny turn rates.
-%   - F is the Jacobian of the propagation. Its last column (how the
-%     predicted state depends on omega) is the new part; derive it by hand.
-%   - Q: cvModel's random-acceleration block for [p; v], plus the variance
-%     of the turn-rate change over one period T.
-error("ctModel:notImplemented", "Implement ctModel.m.")
+v = x(4:6);
+omega = x(7);
+s = sin(omega*T);
+c = cos(omega*T);
+
+% sw = sin(omega*T)/omega and cw = (1 - cos(omega*T))/omega integrate the
+% rotating velocity; dsw and dcw are their derivatives with respect to
+% omega. All four are smooth through omega = 0, where the direct formulas
+% divide 0 by 0, so use their Taylor series near it.
+wT = omega*T;
+if abs(wT) < 1e-3
+    sw = T*(1 - wT^2/6);
+    cw = T*(wT/2 - wT^3/24);
+    dsw = T^2*(-wT/3 + wT^3/30);
+    dcw = T^2*(1/2 - wT^2/8);
+else
+    sw = s/omega;
+    cw = (1 - c)/omega;
+    dsw = (T*c - sw)/omega;
+    dcw = (T*s - cw)/omega;
+end
+
+xPred = [x(1) + sw*v(1) - cw*v(2)
+         x(2) + cw*v(1) + sw*v(2)
+         x(3) + T*v(3)
+         c*v(1) - s*v(2)
+         s*v(1) + c*v(2)
+         v(3)
+         omega];
+
+F = eye(7);
+F(1, [4 5 7]) = [sw, -cw, dsw*v(1) - dcw*v(2)];
+F(2, [4 5 7]) = [cw, sw, dcw*v(1) + dsw*v(2)];
+F(3, 6) = T;
+F(4, [4 5 7]) = [c, -s, -T*(s*v(1) + c*v(2))];
+F(5, [4 5 7]) = [s, c, T*(c*v(1) - s*v(2))];
+
+[~, Qcv] = cvModel(T, sigmaA);
+Q = blkdiag(Qcv, (T*sigmaOmegaDot)^2);
 end

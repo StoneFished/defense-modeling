@@ -54,32 +54,67 @@ xEst = zeros(6, N);
 PEst = zeros(6, 6, N);
 modeProb = zeros(2, N);
 
-% TODO: the starting mode-conditioned estimates. The CV mode starts from
-% (x0, P0); the CT mode from x0 and P0 extended with omega = 0 and
-% variance sigmaOmegaCv^2. The mode probabilities start at
-% params.ModeProb0.
+[F, Qcv] = cvModel(T, params.SigmaACv);
+TM = params.TransitionMatrix;
+mu = params.ModeProb0;
+xCv = x0;
+PCv = P0;
+xCt = [x0; 0];
+PCt = blkdiag(P0, sigmaOmegaCv^2);
 
 for k = 1:N
     if k > 1
-        % TODO 1. Mixing. With TM = params.TransitionMatrix and the last
-        %   mode probabilities mu: the predicted mode probabilities
-        %   muPred(j) = sum_i TM(i,j)*mu(i), the mixing weights
-        %   TM(i,j)*mu(i)/muPred(j), and each mode's starting estimate:
-        %   the mean and covariance (including the spread of the means)
-        %   of the weighted mixture of both modes' last estimates. Convert
-        %   between the 6- and 7-state spaces as described above.
-        % TODO 2a. Predict each mode: cvModel for CV, ctModel for CT.
+        % 1. Mixing. muPred(j) is the probability of mode j before the
+        % measurement; mixW(i,j) the probability of mode i at the last
+        % step given mode j now. A mode that cannot be active (muPred = 0)
+        % keeps its own estimate.
+        muPred = TM'*mu;
+        mixW = TM .* mu ./ muPred';
+        I2 = eye(2);
+        mixW(:, muPred == 0) = I2(:, muPred == 0);
+        xCvAsCt = [xCv; 0];
+        PCvAsCt = blkdiag(PCv, sigmaOmegaCv^2);
+        [xCv0, PCv0] = mixGaussians([xCv, xCt(1:6)], cat(3, PCv, PCt(1:6, 1:6)), mixW(:, 1));
+        [xCt0, PCt0] = mixGaussians([xCvAsCt, xCt], cat(3, PCvAsCt, PCt), mixW(:, 2));
+
+        % 2a. Mode-matched prediction.
+        xCv = F*xCv0;
+        PCv = F*PCv0*F' + Qcv;
+        [xCt, Fct, Qct] = ctModel(xCt0, T, params.SigmaACt, params.SigmaOmegaDot);
+        PCt = Fct*PCt0*Fct' + Qct;
+    else
+        muPred = mu;
     end
 
-    % TODO 2b. Update both modes with z(:, k) using ekfUpdate, keeping the
-    %   innovation nu and its covariance S.
-    % TODO 3. Mode probabilities: muPred (at k = 1, the starting
-    %   probabilities) times each mode's likelihood N(nu; 0, S),
-    %   normalized. Work with log-likelihoods: radar likelihoods can be
-    %   small enough to underflow.
-    % TODO 4. Combination: the probability-weighted mixture of the two
-    %   modes in [p; v] coordinates, stored in xEst(:, k), PEst(:, :, k)
-    %   and modeProb(:, k).
-    error("immFilter:notImplemented", "Implement the IMM steps in immFilter.m.")
+    % 2b. Mode-matched update with the shared measurement.
+    [xCv, PCv, nuCv, SCv] = ekfUpdate(xCv, PCv, z(:, k), R, radarPos);
+    [xCt, PCt, nuCt, SCt] = ekfUpdate(xCt, PCt, z(:, k), R, radarPos);
+
+    % 3. Mode probabilities, computed in logs so that tiny likelihoods
+    % cannot underflow.
+    logW = log(muPred) + [logGaussian(nuCv, SCv); logGaussian(nuCt, SCt)];
+    mu = exp(logW - max(logW));
+    mu = mu/sum(mu);
+
+    % 4. Combination, in the CV mode's [p; v] coordinates.
+    [xEst(:, k), PEst(:, :, k)] = mixGaussians([xCv, xCt(1:6)], cat(3, PCv, PCt(1:6, 1:6)), mu);
+    modeProb(:, k) = mu;
 end
+end
+
+function [x, P] = mixGaussians(xs, Ps, w)
+% Mean and covariance of the Gaussian mixture sum_i w(i)*N(xs(:,i), Ps(:,:,i)).
+x = xs*w;
+P = zeros(size(Ps, 1));
+for i = 1:numel(w)
+    d = xs(:, i) - x;
+    P = P + w(i)*(Ps(:, :, i) + d*d');
+end
+end
+
+function l = logGaussian(nu, S)
+% log N(nu; 0, S).
+L = chol(S, "lower");
+r = L \ nu;
+l = -(r'*r)/2 - sum(log(diag(L))) - numel(nu)/2*log(2*pi);
 end
